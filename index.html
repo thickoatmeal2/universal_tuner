@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chordly • Tuner</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap');
+    body { font-family: 'Inter', system_ui, sans-serif; }
+    .gauge { transform: rotate(-90deg); }
+  </style>
+</head>
+<body class="bg-zinc-950 text-white min-h-screen flex flex-col">
+  <div class="max-w-2xl mx-auto w-full p-4 flex-1 flex flex-col">
+    <!-- Header -->
+    <div class="flex justify-between items-center mb-6">
+      <div class="flex items-center gap-3">
+        <div class="text-3xl">🎸</div>
+        <h1 class="text-3xl font-semibold">Chordly</h1>
+      </div>
+      <button onclick="toggleListening()" id="micBtn"
+        class="px-6 py-2 bg-emerald-500 hover:bg-emerald-600 rounded-2xl font-medium flex items-center gap-2">
+        <span id="micText">Start Listening</span>
+      </button>
+    </div>
+
+    <!-- Instrument & Tuning -->
+    <div class="flex gap-4 mb-6">
+      <div class="flex-1">
+        <label class="text-xs uppercase tracking-widest text-zinc-400">Instrument</label>
+        <select id="instrumentSelect" onchange="updateTunings()" class="w-full bg-zinc-900 rounded-2xl px-4 py-3 text-lg">
+          <!-- populated by JS -->
+        </select>
+      </div>
+      <div class="flex-1">
+        <label class="text-xs uppercase tracking-widest text-zinc-400">Tuning</label>
+        <select id="tuningSelect" onchange="loadTargets()" class="w-full bg-zinc-900 rounded-2xl px-4 py-3 text-lg">
+          <!-- populated by JS -->
+        </select>
+      </div>
+    </div>
+
+    <!-- Main Display -->
+    <div class="bg-zinc-900 rounded-3xl p-8 flex-1 flex flex-col items-center justify-center text-center relative">
+      <div id="noteDisplay" class="text-8xl font-semibold tabular-nums mb-2">—</div>
+      <div id="freqDisplay" class="text-zinc-400 text-xl">— Hz</div>
+
+      <!-- Cents Gauge -->
+      <div class="relative w-64 h-64 mt-6">
+        <svg class="gauge w-64 h-64" viewBox="0 0 200 200">
+          <circle cx="100" cy="100" r="80" fill="none" stroke="#27272a" stroke-width="30"/>
+          <circle id="gaugeArc" cx="100" cy="100" r="80" fill="none" stroke="#10b981" stroke-width="30" stroke-dasharray="502" stroke-dashoffset="251" stroke-linecap="round"/>
+          <line id="needle" x1="100" y1="100" x2="100" y2="30" stroke="#eab308" stroke-width="8" stroke-linecap="round" transform="rotate(-90 100 100)"/>
+        </svg>
+        <div class="absolute inset-0 flex items-center justify-center">
+          <div id="centsDisplay" class="text-5xl font-medium tabular-nums text-yellow-400">0</div>
+        </div>
+      </div>
+
+      <div id="status" class="mt-4 text-emerald-400 font-medium">Ready</div>
+    </div>
+
+    <!-- Target Strings / Notes -->
+    <div class="mt-8">
+      <p class="text-xs uppercase tracking-widest text-zinc-400 mb-3">TARGETS</p>
+      <div id="targetsList" class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <!-- populated by JS -->
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ==================== DATA ====================
+    const INSTRUMENTS = {
+      guitar: {
+        name: "Guitar",
+        tunings: {
+          "Standard": ["E2", "A2", "D3", "G3", "B3", "E4"],
+          "Open A": ["E2", "A2", "C#3", "E3", "A3", "E4"],
+          "Open D": ["D2", "A2", "D3", "F#3", "A3", "D4"],
+          "Open E": ["E2", "B2", "E3", "G#3", "B3", "E4"],
+          "Drop D": ["D2", "A2", "D3", "G3", "B3", "E4"],
+          "DADGAD": ["D2", "A2", "D3", "G3", "A3", "D4"]
+        }
+      },
+      violin: { name: "Violin", tunings: { "Standard": ["G3", "D4", "A4", "E5"] } },
+      cello: { name: "Cello", tunings: { "Standard": ["C2", "G2", "D3", "A3"] } },
+      ukulele: { name: "Ukulele", tunings: { "Standard": ["G4", "C4", "E4", "A4"] } },
+      bass: { name: "Bass Guitar", tunings: { "Standard": ["E1", "A1", "D2", "G2"] } },
+      chromatic: { name: "Chromatic (Piano etc.)", tunings: { "Free": [] } }
+    };
+
+    // Note helpers (same as Python version)
+    const NOTES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+    function freqToNote(freq) {
+      if (freq <= 0) return { note: "—", cents: 0 };
+      const h = Math.round(12 * Math.log2(freq / 440));
+      const octave = 4 + Math.floor(h / 12);
+      const noteIdx = (9 + h) % 12;
+      const note = NOTES[noteIdx];
+      const targetFreq = 440 * Math.pow(2, h / 12);
+      const cents = Math.round(1200 * Math.log2(freq / targetFreq));
+      return { note: `${note}${octave}`, cents };
+    }
+
+    // Audio variables
+    let audioContext, analyser, scriptProcessor, stream;
+    let isListening = false;
+    let currentTargets = [];
+    let currentTuningName = "";
+
+    // Populate instrument dropdown
+    function populateInstruments() {
+      const select = document.getElementById("instrumentSelect");
+      select.innerHTML = Object.keys(INSTRUMENTS).map(key => 
+        `<option value="${key}">${INSTRUMENTS[key].name}</option>`
+      ).join("");
+    }
+
+    function updateTunings() {
+      const instrKey = document.getElementById("instrumentSelect").value;
+      const tuningSelect = document.getElementById("tuningSelect");
+      const tunings = INSTRUMENTS[instrKey].tunings;
+      tuningSelect.innerHTML = Object.keys(tunings).map(t => 
+        `<option value="${t}">${t}</option>`
+      ).join("");
+      loadTargets();
+    }
+
+    function loadTargets() {
+      const instrKey = document.getElementById("instrumentSelect").value;
+      const tuningName = document.getElementById("tuningSelect").value;
+      currentTuningName = tuningName;
+      currentTargets = INSTRUMENTS[instrKey].tunings[tuningName] || [];
+      
+      // Render target list
+      const container = document.getElementById("targetsList");
+      container.innerHTML = currentTargets.map(note => `
+        <div class="bg-zinc-800 rounded-2xl p-4 flex items-center justify-between">
+          <span class="text-2xl font-medium">${note}</span>
+          <span id="target-${note}" class="text-xs px-3 py-1 bg-zinc-700 rounded-full">—</span>
+        </div>
+      `).join("") || `<div class="col-span-full text-center text-zinc-400 py-8">Play any note – chromatic mode</div>`;
+    }
+
+    // Simple autocorrelation pitch detection
+    function detectPitch(buffer) {
+      const SIZE = buffer.length;
+      let bestOffset = -1;
+      let bestCorrelation = 0;
+      let rms = 0;
+
+      for (let i = 0; i < SIZE; i++) rms += buffer[i] * buffer[i];
+      rms = Math.sqrt(rms / SIZE);
+      if (rms < 0.01) return 0; // silence
+
+      for (let offset = Math.floor(SIZE * 0.02); offset < SIZE * 0.5; offset++) {
+        let correlation = 0;
+        for (let i = 0; i < SIZE - offset; i++) {
+          correlation += Math.abs(buffer[i] - buffer[i + offset]);
+        }
+        correlation = 1 - (correlation / (SIZE - offset));
+        if (correlation > bestCorrelation) {
+          bestCorrelation = correlation;
+          bestOffset = offset;
+        }
+      }
+
+      if (bestCorrelation > 0.3) {
+        const sampleRate = audioContext.sampleRate;
+        return sampleRate / bestOffset;
+      }
+      return 0;
+    }
+
+    function startAudio() {
+      navigator.mediaDevices.getUserMedia({ audio: true })
+        .then(s => {
+          stream = s;
+          audioContext = new (window.AudioContext || window.webkitAudioContext)();
+          const source = audioContext.createMediaStreamSource(stream);
+          scriptProcessor = audioContext.createScriptProcessor(2048, 1, 1);
+          
+          scriptProcessor.onaudioprocess = (e) => {
+            const input = e.inputBuffer.getChannelData(0);
+            const freq = detectPitch(input);
+            if (freq > 60 && freq < 1500) {
+              const { note, cents } = freqToNote(freq);
+              document.getElementById("noteDisplay").textContent = note;
+              document.getElementById("freqDisplay").textContent = `${freq.toFixed(1)} Hz`;
+
+              // Update gauge
+              const clampedCents = Math.max(-50, Math.min(50, cents));
+              const rotation = (clampedCents + 50) * 1.8; // -90° to +90°
+              document.getElementById("needle").setAttribute("transform", `rotate(${rotation} 100 100)`);
+              document.getElementById("centsDisplay").textContent = cents > 0 ? `+${cents}` : cents;
+
+              // Highlight closest target
+              if (currentTargets.length > 0) {
+                let closest = currentTargets[0];
+                let minDiff = Infinity;
+                currentTargets.forEach(t => {
+                  const targetFreq = noteToFreq(t);
+                  const diff = Math.abs(freq - targetFreq);
+                  if (diff < minDiff) { minDiff = diff; closest = t; }
+                });
+                document.querySelectorAll("#targetsList > div span:last-child").forEach(el => {
+                  el.textContent = el.id === `target-${closest}` ? (Math.abs(cents) < 10 ? "✅" : "◉") : "—";
+                });
+              }
+            }
+          };
+
+          source.connect(scriptProcessor);
+          scriptProcessor.connect(audioContext.destination);
+          isListening = true;
+          document.getElementById("micText").textContent = "Listening…";
+        })
+        .catch(err => alert("Microphone access denied or not available"));
+    }
+
+    function noteToFreq(note) {
+      const noteName = note.slice(0, -1);
+      const octave = parseInt(note.slice(-1));
+      const idx = NOTES.indexOf(noteName);
+      return 440 * Math.pow(2, (idx - 9 + 12 * (octave - 4)) / 12);
+    }
+
+    function toggleListening() {
+      if (isListening) {
+        if (stream) stream.getTracks().forEach(t => t.stop());
+        if (scriptProcessor) scriptProcessor.disconnect();
+        isListening = false;
+        document.getElementById("micText").textContent = "Start Listening";
+        document.getElementById("noteDisplay").textContent = "—";
+      } else {
+        startAudio();
+      }
+    }
+
+    // Init
+    window.onload = () => {
+      populateInstruments();
+      updateTunings();
+      // Tailwind script already loaded
+    };
+  </script>
+</body>
+</html>
