@@ -9,21 +9,15 @@
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
     body { font-family: 'Inter', system_ui, sans-serif; }
-    .needle {
-      transition: transform 0.08s cubic-bezier(0.4, 0.0, 0.2, 1);
-    }
-    .in-tune {
-      animation: pulse 1.5s infinite;
-    }
-    @keyframes pulse {
-      0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }
-      70% { box-shadow: 0 0 0 12px rgba(16, 185, 129, 0); }
-    }
+    .needle { transition: transform 0.1s cubic-bezier(0.4, 0.0, 0.2, 1); }
+    .skin-transition { transition: all 0.4s cubic-bezier(0.4, 0.0, 0.2, 1); }
+    .in-tune { animation: pulse 1.5s infinite; }
+    @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5); } 70% { box-shadow: 0 0 0 15px rgba(16, 185, 129, 0); } }
   </style>
 </head>
-<body class="bg-zinc-950 text-white min-h-screen pb-8">
+<body id="body" class="skin-classic bg-zinc-950 text-white min-h-screen pb-8 skin-transition">
   <div class="max-w-xl mx-auto px-4 pt-6">
-    <!-- Header -->
+    <!-- Header with Skin Selector -->
     <div class="flex items-center justify-between mb-8">
       <div class="flex items-center gap-3">
         <div class="w-11 h-11 bg-emerald-500 rounded-2xl flex items-center justify-center text-3xl shadow-lg">🎸</div>
@@ -32,68 +26,171 @@
           <p class="text-zinc-400 text-sm -mt-1">Tuner</p>
         </div>
       </div>
-      <button onclick="toggleListening()" id="micBtn"
-        class="flex items-center gap-2.5 bg-emerald-600 hover:bg-emerald-500 px-6 py-3 rounded-3xl font-semibold transition-all active:scale-95">
-        <i class="fas fa-microphone"></i>
-        <span id="micText" class="text-base">Start Listening</span>
-      </button>
+
+      <div class="flex items-center gap-3">
+        <!-- Skin Selector -->
+        <div class="relative group">
+          <button onclick="toggleSkinMenu()" class="flex items-center gap-2 bg-zinc-900 hover:bg-zinc-800 px-4 py-2 rounded-3xl text-sm font-medium border border-zinc-700">
+            <span id="currentSkinName">Classic Dark</span>
+            <i class="fas fa-palette"></i>
+          </button>
+          <!-- Skin Menu -->
+          <div id="skinMenu" class="hidden absolute right-0 mt-2 w-56 bg-zinc-900 rounded-3xl shadow-2xl border border-zinc-700 py-2 z-50">
+            <!-- Populated by JS -->
+          </div>
+        </div>
+
+        <button onclick="toggleListening()" id="micBtn"
+          class="flex items-center gap-2.5 bg-emerald-600 hover:bg-emerald-500 px-6 py-3 rounded-3xl font-semibold transition-all active:scale-95">
+          <i class="fas fa-microphone"></i>
+          <span id="micText" class="text-base">Start Listening</span>
+        </button>
+      </div>
     </div>
 
-    <!-- Instrument & Tuning -->
+    <!-- Rest of the UI (Instrument, Tuning, Display, Targets) stays the same but now respects skin colors -->
     <div class="grid grid-cols-2 gap-4 mb-8">
       <div>
         <label class="block text-xs uppercase tracking-widest text-zinc-500 mb-1.5">Instrument</label>
         <select id="instrumentSelect" onchange="updateTunings()" 
-          class="w-full bg-zinc-900 border border-zinc-800 rounded-3xl px-5 py-4 text-lg focus:outline-none focus:border-emerald-500">
+          class="w-full bg-zinc-900 border border-zinc-800 rounded-3xl px-5 py-4 text-lg focus:outline-none focus:border-emerald-500 skin-transition">
         </select>
       </div>
       <div>
         <label class="block text-xs uppercase tracking-widest text-zinc-500 mb-1.5">Tuning</label>
         <select id="tuningSelect" onchange="loadTargets()" 
-          class="w-full bg-zinc-900 border border-zinc-800 rounded-3xl px-5 py-4 text-lg focus:outline-none focus:border-emerald-500">
+          class="w-full bg-zinc-900 border border-zinc-800 rounded-3xl px-5 py-4 text-lg focus:outline-none focus:border-emerald-500 skin-transition">
         </select>
       </div>
     </div>
 
-    <!-- Main Tuner Display -->
-    <div class="bg-zinc-900 rounded-3xl p-8 shadow-inner border border-zinc-800 mb-8">
+    <!-- Main Display -->
+    <div id="mainDisplay" class="bg-zinc-900 rounded-3xl p-8 shadow-inner border border-zinc-800 mb-8 skin-transition">
       <div class="text-center">
-        <div id="noteDisplay" class="text-8xl font-bold tabular-nums tracking-tighter text-white mb-1">—</div>
-        <div id="freqDisplay" class="text-emerald-400 font-medium text-xl">— Hz</div>
+        <div id="noteDisplay" class="text-8xl font-bold tabular-nums tracking-tighter mb-1">—</div>
+        <div id="freqDisplay" class="font-medium text-xl">— Hz</div>
       </div>
 
       <!-- Gauge -->
       <div class="relative w-72 h-72 mx-auto mt-6 mb-4">
         <svg class="w-full h-full -rotate-90" viewBox="0 0 200 200">
-          <!-- Background arc -->
           <circle cx="100" cy="100" r="82" fill="none" stroke="#27272a" stroke-width="28"/>
-          <!-- Colored arc -->
           <circle id="gaugeArc" cx="100" cy="100" r="82" fill="none" stroke="#10b981" 
             stroke-width="28" stroke-dasharray="515" stroke-dashoffset="257" stroke-linecap="round"/>
-          <!-- Needle -->
           <line id="needle" x1="100" y1="100" x2="100" y2="28" 
             stroke="#eab308" stroke-width="7" stroke-linecap="round" class="needle"/>
         </svg>
         <div class="absolute inset-0 flex items-center justify-center">
-          <div id="centsDisplay" class="text-6xl font-semibold tabular-nums text-yellow-300">0</div>
+          <div id="centsDisplay" class="text-6xl font-semibold tabular-nums">0</div>
         </div>
       </div>
-
-      <div id="status" class="text-center text-emerald-400 font-medium text-lg">Ready to tune</div>
+      <div id="status" class="text-center font-medium text-lg">Ready to tune</div>
     </div>
 
     <!-- Targets -->
     <div>
       <p class="uppercase text-xs tracking-widest text-zinc-500 mb-4 px-1">Target Notes</p>
       <div id="targetsList" class="grid grid-cols-2 gap-3">
-        <!-- JS populated -->
       </div>
     </div>
   </div>
 
   <script>
-    // Same data and logic as before (kept clean)
-    const INSTRUMENTS = {
+    // ==================== SKINS ====================
+    const SKINS = {
+      classic: { 
+        name: "Classic Dark", 
+        icon: "🌑",
+        body: "bg-zinc-950",
+        display: "bg-zinc-900 border-zinc-800",
+        accent: "emerald",
+        needle: "#eab308",
+        gauge: "#10b981",
+        text: "text-white"
+      },
+      neon: { 
+        name: "Neon Glow", 
+        icon: "🌈",
+        body: "bg-black",
+        display: "bg-zinc-950 border-cyan-500",
+        accent: "cyan",
+        needle: "#22d3ee",
+        gauge: "#67e8f9",
+        text: "text-cyan-300"
+      },
+      retro: { 
+        name: "Retro Wood", 
+        icon: "🪵",
+        body: "bg-amber-950",
+        display: "bg-amber-900 border-amber-700",
+        accent: "amber",
+        needle: "#fbbf24",
+        gauge: "#fcd34d",
+        text: "text-amber-100"
+      },
+      ocean: { 
+        name: "Ocean", 
+        icon: "🌊",
+        body: "bg-slate-950",
+        display: "bg-slate-900 border-sky-600",
+        accent: "sky",
+        needle: "#38bdf8",
+        gauge: "#0ea5e9",
+        text: "text-sky-200"
+      },
+      purple: { 
+        name: "Electric Purple", 
+        icon: "⚡",
+        body: "bg-violet-950",
+        display: "bg-violet-900 border-violet-600",
+        accent: "violet",
+        needle: "#c026d3",
+        gauge: "#d946ef",
+        text: "text-violet-200"
+      }
+    };
+
+    let currentSkin = "classic";
+
+    function applySkin(skinKey) {
+      currentSkin = skinKey;
+      const skin = SKINS[skinKey];
+      
+      document.getElementById("body").className = `skin-${skinKey} ${skin.body} text-white min-h-screen pb-8 skin-transition`;
+      document.getElementById("mainDisplay").className = `${skin.display} rounded-3xl p-8 shadow-inner border skin-transition`;
+      
+      // Update gauge colors via JS (since Tailwind colors vary)
+      document.getElementById("gaugeArc").setAttribute("stroke", skin.gauge);
+      document.getElementById("needle").setAttribute("stroke", skin.needle);
+      document.getElementById("centsDisplay").className = `text-6xl font-semibold tabular-nums ${skin.text}`;
+      
+      // Save preference
+      localStorage.setItem("chordlySkin", skinKey);
+      
+      // Update menu button
+      document.getElementById("currentSkinName").innerHTML = `${skin.icon} ${skin.name}`;
+    }
+
+    function toggleSkinMenu() {
+      const menu = document.getElementById("skinMenu");
+      menu.classList.toggle("hidden");
+      
+      if (!menu.hasChildNodes()) {
+        menu.innerHTML = Object.keys(SKINS).map(key => {
+          const s = SKINS[key];
+          return `
+            <button onclick="applySkin('${key}'); toggleSkinMenu()" 
+              class="w-full px-5 py-3 text-left hover:bg-zinc-800 flex items-center gap-3 ${currentSkin === key ? 'bg-zinc-800' : ''}">
+              <span class="text-2xl">${s.icon}</span>
+              <span>${s.name}</span>
+            </button>
+          `;
+        }).join("");
+      }
+    }
+
+    // ==================== Rest of the tuner code (same as before) ====================
+    const INSTRUMENTS = { /* ... same as previous version ... */ 
       guitar: { name: "Guitar", tunings: {
         "Standard": ["E2", "A2", "D3", "G3", "B3", "E4"],
         "Open A": ["E2", "A2", "C#3", "E3", "A3", "E4"],
@@ -111,7 +208,7 @@
 
     const NOTES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
-    function freqToNote(freq) {
+    function freqToNote(freq) { /* same as before */ 
       if (freq <= 0) return { note: "—", cents: 0 };
       const h = Math.round(12 * Math.log2(freq / 440));
       const octave = 4 + Math.floor(h / 12);
@@ -121,26 +218,25 @@
       return { note: `${NOTES[noteIdx]}${octave}`, cents };
     }
 
-    function noteToFreq(note) {
+    function noteToFreq(note) { /* same */ 
       const noteName = note.slice(0, -1);
       const octave = parseInt(note.slice(-1));
       const idx = NOTES.indexOf(noteName);
       return 440 * Math.pow(2, (idx - 9 + 12 * (octave - 4)) / 12);
     }
 
-    // Audio variables
     let audioContext, scriptProcessor, stream;
     let isListening = false;
     let currentTargets = [];
 
-    function populateInstruments() {
+    function populateInstruments() { /* same as before */ 
       const select = document.getElementById("instrumentSelect");
       select.innerHTML = Object.keys(INSTRUMENTS).map(key => 
         `<option value="${key}">${INSTRUMENTS[key].name}</option>`
       ).join("");
     }
 
-    function updateTunings() {
+    function updateTunings() { /* same */ 
       const instrKey = document.getElementById("instrumentSelect").value;
       const tuningSelect = document.getElementById("tuningSelect");
       const tunings = INSTRUMENTS[instrKey].tunings;
@@ -150,22 +246,21 @@
       loadTargets();
     }
 
-    function loadTargets() {
+    function loadTargets() { /* same */ 
       const instrKey = document.getElementById("instrumentSelect").value;
       const tuningName = document.getElementById("tuningSelect").value;
       currentTargets = INSTRUMENTS[instrKey].tunings[tuningName] || [];
       
       const container = document.getElementById("targetsList");
       container.innerHTML = currentTargets.map(note => `
-        <div id="card-${note}" class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5 text-center transition-all">
+        <div id="card-${note}" class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5 text-center transition-all skin-transition">
           <div class="text-4xl font-semibold mb-1">${note}</div>
           <div id="status-${note}" class="text-xs font-medium text-zinc-400">—</div>
         </div>
       `).join("") || `<div class="col-span-2 text-center py-12 text-zinc-500">Play any note</div>`;
     }
 
-    function detectPitch(buffer) {
-      // Same reliable detection as before
+    function detectPitch(buffer) { /* same reliable detection */ 
       const SIZE = buffer.length;
       let bestOffset = -1, bestCorrelation = 0, rms = 0;
       for (let i = 0; i < SIZE; i++) rms += buffer[i] * buffer[i];
@@ -186,7 +281,7 @@
       return bestCorrelation > 0.28 ? audioContext.sampleRate / bestOffset : 0;
     }
 
-    function startAudio() {
+    function startAudio() { /* same, with minor skin-friendly updates */ 
       navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } })
         .then(s => {
           stream = s;
@@ -200,18 +295,14 @@
             
             if (freq > 60 && freq < 2000) {
               const { note, cents } = freqToNote(freq);
-              
               document.getElementById("noteDisplay").textContent = note;
               document.getElementById("freqDisplay").textContent = `${freq.toFixed(1)} Hz`;
 
-              // Smooth needle
               const clamped = Math.max(-50, Math.min(50, cents));
               const degrees = clamped * 1.8;
               document.getElementById("needle").setAttribute("transform", `rotate(${degrees} 100 100)`);
-              
               document.getElementById("centsDisplay").textContent = cents >= 0 ? `+${cents}` : cents;
 
-              // Highlight closest target
               if (currentTargets.length > 0) {
                 let closest = currentTargets[0];
                 let minDiff = Infinity;
@@ -245,7 +336,7 @@
         .catch(() => alert("Microphone access needed"));
     }
 
-    function toggleListening() {
+    function toggleListening() { /* same */ 
       if (isListening) {
         if (stream) stream.getTracks().forEach(t => t.stop());
         if (scriptProcessor) scriptProcessor.disconnect();
@@ -256,9 +347,14 @@
       }
     }
 
+    // Init
     window.onload = () => {
       populateInstruments();
       updateTunings();
+      
+      // Load saved skin or default
+      const savedSkin = localStorage.getItem("chordlySkin") || "classic";
+      applySkin(savedSkin);
     };
   </script>
 </body>
